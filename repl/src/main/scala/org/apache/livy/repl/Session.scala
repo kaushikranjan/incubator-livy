@@ -55,7 +55,7 @@ class Session(
   extends Logging {
   import Session._
 
-  private val pool = Executors.newCachedThreadPool() //.newFixedThreadPool(3)
+  private val pool = Executors.newFixedThreadPool(10)
   private val interpreterInitExecutor = ExecutionContext.fromExecutorService(
     Executors.newSingleThreadExecutor())
 
@@ -175,11 +175,12 @@ class Session(
 
       }
 
+      activeJobs.incrementAndGet()
       setJobGroup(tpe, statementId)
       statement.compareAndTransit(StatementState.Waiting, StatementState.Running)
 
       if (statement.state.get() == StatementState.Running) {
-        statement.output = executeCode(interpreter(tpe), statementId, code)
+        statement.output = executeCode(interpreter(tpe), statementId, code, true)
       }
 
       statement.compareAndTransit(StatementState.Running, StatementState.Available)
@@ -274,12 +275,12 @@ class Session(
 
   private def executeCode(interp: Option[Interpreter],
      executionCount: Int,
-     code: String): String = {
-    activeJobs.incrementAndGet()
+     code: String, isCodeExecuted: Boolean = false): String = {
     changeState(SessionState.Busy)
 
     def transitToIdle() = {
-      activeJobs.decrementAndGet()
+      if (isCodeExecuted)
+        activeJobs.decrementAndGet()
       //val executingLastStatement = executionCount == newStatementId.intValue() - 1
       //if (_statements.isEmpty || executingLastStatement) {
       if (_statements.isEmpty || activeJobs.get() == 0) {
